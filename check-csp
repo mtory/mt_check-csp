@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+# Check for curl and recommend installation if not found
+if ! command -v curl &> /dev/null; then
+    echo "Error: curl is not installed. Please install curl to use this script."
+    exit 1
+fi
+
+# Function to display usage
+usage() {
+    echo "Usage: $0 [options] <website URL> <CSP directive> <domain to search>"
+    echo "Example: $0 -v -t 5 https://myapp.com script-src otherdomain.com"
+    echo "Options:"
+    echo "  -v  Verbose mode. Print more information about the process."
+    echo "  -t  Set timeout in seconds. Default is 10 seconds."
+    echo "  -h  Display this help message."
+    exit 1
+}
+
+# Default curl timeout
+timeout=10
+
+# Process options
+while getopts "vht:" opt; do
+    case $opt in
+        v) verbose=1 ;;
+        t) timeout=$OPTARG ;;
+        h) usage ;;
+        \?) usage ;;
+    esac
+done
+
+# Shift off the options and flags
+shift $((OPTIND - 1))
+
+# Check if all required arguments are supplied
+if [ $# -ne 3 ]; then
+    echo -e "${RED}Error: Missing arguments.${NC}"
+    usage
+fi
+
+# Assign arguments to variables for clarity
+websiteURL=$1
+cspDirective=$2
+searchDomain=$3
+
+# Verbose output
+[[ $verbose -eq 1 ]] && echo -e "Fetching CSP header for $websiteURL with a timeout of $timeout seconds..."
+
+# Fetch the CSP header with curl timeout and redirect handling
+cspHeader=$(curl -LI "$websiteURL" -m "$timeout" -s -o /dev/null -D - 2>/dev/null | grep -i Content-Security-Policy)
+
+if [ -z "$cspHeader" ]; then
+    [[ $verbose -eq 1 ]] && echo -e "${RED}No CSP header found or the website did not respond.${NC}"
+    exit 2
+fi
+
+# Verbose output
+[[ $verbose -eq 1 ]] && echo -e "Analyzing CSP directive: $cspDirective..."
+
+directiveContent=$(echo "$cspHeader" | grep -o "${cspDirective}[^;]*;")
+
+if echo "$directiveContent" | grep -q "$searchDomain"; then
+    echo -e "${GREEN}Found ${searchDomain} in ${cspDirective} on ${websiteURL}${NC}"
+else
+    echo -e "${RED}Didn't find ${searchDomain} in ${cspDirective} on ${websiteURL}${NC}"
+fi
